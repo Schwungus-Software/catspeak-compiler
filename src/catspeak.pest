@@ -1,0 +1,47 @@
+WHITESPACE = _{ " " | "\n" | "\r" | "\t" | "\x0B" }
+COMMENT = _{ "--" ~ (!"\n" ~ !"\r" ~ ANY)* ~ ("\n" | "\r") }
+
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number = @{ !"-" ~ !"+" ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+escape = @{ "\\" ~ ("n" | "r" | "t" | "v" | "\\" | "\"") }
+char = @{ !"\"" ~ !"\\" ~ ANY }
+string = ${ "\"" ~ (escape | char)* ~ "\"" }
+
+bool = { "true" | "false" }
+value = { bool | string | ident | number }
+
+block = { "{" ~ stmt* ~ "}" }
+
+let = { "let" ~ ident ~ "=" ~ expr }
+
+op_ass = { "=" | "+=" | "-=" | "*=" | "/=" }
+ass = { ident ~ op_ass ~ expr }
+
+if = { "if" ~ expr ~ stmt ~ ("else" ~ stmt)? }
+while = { "while" ~ expr ~ stmt }
+
+break = { "break" ~ expr? }
+
+op_1 = _{ "*" | "/" }
+op_2 = _{ "+" | "-" }
+op_3 = _{ ">" | "<" | ">=" | "<=" | "==" }
+
+operator = { op_1 | op_2 | op_3 }
+
+binary_op = { expr_no_bin_op ~ operator ~ expr }
+unary_op = { ("!" | "-" | "+" | "~") ~ expr_no_bin_op }
+
+funcall = { ident ~ "(" ~ (expr ~ ",")* ~ expr? ~ ")" }
+
+paren = { "(" ~ expr ~ ")" }
+
+expr_primary = _{ if | while | block | funcall }
+expr_secondary = _{ paren | value }
+
+expr_no_bin_op = { expr_primary | unary_op | expr_secondary }
+expr = { expr_primary | binary_op | unary_op | expr_secondary }
+
+stmt = { (let | ass | break | expr) ~ ";"? }
+
+script = _{ SOI ~ stmt* ~ EOI }

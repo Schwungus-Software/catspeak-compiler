@@ -1,0 +1,32 @@
+-- comment 1
+---comment 2
+--       comment 3
+
+let something = 10;
+
+let something_else = 20--hello
+
+while something < something_else {
+    something += 1
+}
+
+if something == something_else {
+    show_message("YEAH")
+} else {
+    show_message("NOOOOO")
+}
+
+if true {
+    show_message("seen")
+}
+
+if false {
+    show_message("unseen")
+}
+
+if false {
+} else if true {
+    show_message("YEAH")
+} else {
+    show_message("wuh?")
+}
