@@ -11,7 +11,7 @@ while something < something_else {
 }
 
 if something == something_else {
-    show_message("YEAH")
+    show_message("yep")
 } else {
     show_message("NOOOOO")
 }
@@ -26,7 +26,7 @@ if false {
 
 if false {
 } else if true {
-    show_message("YEAH")
+    show_message("hi there")
 } else {
     show_message("wuh?")
 }
