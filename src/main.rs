@@ -3,7 +3,8 @@ extern crate log;
 
 use clap::Parser;
 use cli::Cli;
-use color_eyre::eyre;
+
+pub use color_eyre::eyre;
 
 mod cli;
 mod ir;

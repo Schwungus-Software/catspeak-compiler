@@ -8,8 +8,10 @@ escape = @{ "\\" ~ ("n" | "r" | "t" | "v" | "\\" | "\"") }
 char = @{ !"\"" ~ !"\\" ~ ANY }
 string = ${ "\"" ~ (escape | char)* ~ "\"" }
 
+undefined = { "undefined" }
 bool = { "true" | "false" }
-value = { bool | string | ident | number }
+
+value = { undefined | bool | string | number | ident }
 
 block = { "{" ~ stmt* ~ "}" }
 
@@ -18,14 +20,14 @@ let = { "let" ~ ident ~ "=" ~ expr }
 op_ass = { "=" | "+=" | "-=" | "*=" | "/=" }
 ass = { ident ~ op_ass ~ expr }
 
-if = { "if" ~ expr ~ stmt ~ ("else" ~ stmt)? }
+if = { "if" ~ expr ~ block ~ ("else" ~ (if | block))? }
 while = { "while" ~ expr ~ stmt }
 
 break = { "break" ~ expr? }
 
-op_1 = _{ "*" | "/" }
+op_1 = _{ "*" | "/" | "//" }
 op_2 = _{ "+" | "-" }
-op_3 = _{ ">" | "<" | ">=" | "<=" | "==" }
+op_3 = _{ ">" | "<" | ">=" | "<=" | "==" | "!=" }
 
 operator = { op_1 | op_2 | op_3 }
 

@@ -4,10 +4,13 @@ use std::{
 };
 
 use clap::Parser;
-use color_eyre::eyre::{self, eyre};
 use log::Level;
 
-use crate::{ir::IR, parser::CatspeakParser};
+use crate::{
+    eyre::{self, eyre},
+    ir::{InterfacePreset, Script},
+    parser::CatspeakParser,
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -67,16 +70,22 @@ impl Cli {
 
         let ast_output = path.with_extension("ast.json");
         let ast_output = File::create(ast_output)?;
-
         serde_json::to_writer_pretty(ast_output, &ast)?;
 
-        let ir = IR::parse_from_ast(ast)?;
+        let ir = Script::new(BasicInterface).produce_ir(ast);
 
         let ir_output = path.with_extension("ir.json");
         let ir_output = File::create(ir_output)?;
-
         serde_json::to_writer_pretty(ir_output, &ir)?;
 
         Ok(())
+    }
+}
+
+struct BasicInterface;
+
+impl InterfacePreset for BasicInterface {
+    fn modify(&self, script: &mut Script) {
+        script.import_global("show_message");
     }
 }

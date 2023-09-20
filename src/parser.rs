@@ -1,14 +1,15 @@
 use std::io;
 
-use color_eyre::eyre;
 use pest::{iterators::Pair, Parser};
 use serde::{Deserialize, Serialize};
+
+use crate::eyre;
 
 #[derive(pest_derive::Parser)]
 #[grammar = "catspeak.pest"]
 pub struct CatspeakParser;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub enum AstNode {
     Let {
         var_name: String,
@@ -43,13 +44,14 @@ pub enum AstNode {
         operand: Box<AstNode>,
         operator: UnaryOp,
     },
+    Undefined,
     Bool(bool),
     Real(f64),
     String(String),
     Ident(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AssignOp {
     Assign,
     AddAssign,
@@ -58,25 +60,66 @@ pub enum AssignOp {
     DivAssign,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum BinaryOp {
     Add,
     Sub,
     Mul,
     Div,
     Eq,
+    Neq,
     Greater,
     Less,
     GreaterEq,
     LessEq,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum UnaryOp {
     Not,
     BitNot,
     Neg,
     Id,
+}
+
+impl AssignOp {
+    pub fn idx(&self) -> u8 {
+        match self {
+            Self::Assign => 0,
+            Self::MulAssign => 1,
+            Self::DivAssign => 2,
+            Self::SubAssign => 3,
+            Self::AddAssign => 4,
+        }
+    }
+}
+
+impl BinaryOp {
+    pub fn idx(&self) -> u8 {
+        match self {
+            Self::Mul => 1,
+            Self::Div => 2,
+            Self::Add => 5,
+            Self::Sub => 4,
+            Self::Eq => 6,
+            Self::Neq => 7,
+            Self::Greater => 8,
+            Self::GreaterEq => 9,
+            Self::Less => 10,
+            Self::LessEq => 11,
+        }
+    }
+}
+
+impl UnaryOp {
+    pub fn idx(&self) -> u8 {
+        match self {
+            Self::Not => 12,
+            Self::BitNot => 13,
+            Self::Neg => BinaryOp::Sub.idx(),
+            Self::Id => BinaryOp::Add.idx(),
+        }
+    }
 }
 
 impl CatspeakParser {
@@ -180,8 +223,16 @@ impl AstNode {
         let mut pair = pair.into_inner();
 
         let condition = Box::new(Self::parse_expr(pair.next().unwrap()));
-        let body = Box::new(Self::parse_stmt(pair.next().unwrap()));
-        let else_block = pair.next().map(Self::parse_stmt).map(Box::new);
+        let body = Box::new(Self::parse_block(pair.next().unwrap()));
+
+        let else_block = pair
+            .next()
+            .map(|pair| match pair.as_rule() {
+                Rule::block => Self::parse_block(pair),
+                Rule::r#if => Self::parse_if(pair),
+                _ => unreachable!(),
+            })
+            .map(Box::new);
 
         AstNode::If {
             condition,
@@ -271,6 +322,7 @@ impl AstNode {
         let pair = pair.into_inner().next().unwrap();
 
         match pair.as_rule() {
+            Rule::undefined => AstNode::Undefined,
             Rule::bool => {
                 let value = pair.as_str() == "true";
                 AstNode::Bool(value)
@@ -318,12 +370,19 @@ impl AstNode {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{fs::File, io::Cursor};
 
     use super::*;
 
     #[test]
-    fn parse_big_file() {
+    fn parse_big_file() -> eyre::Result<()> {
+        let file = File::open("testfiles/insanity.txt")?;
+        CatspeakParser::parse_input(&file)?;
+        Ok(())
+    }
+
+    #[test]
+    fn parse_big_script() {
         // TODO: write down an AST for this thing.
         CatspeakParser::parse_input(Cursor::new(
             r#"
@@ -333,7 +392,7 @@ mod tests {
 
 let something = 10;
 
-let something_else = 20
+let something_else = 20--hello
 
 while something < something_else {
     something += 1

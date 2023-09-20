@@ -90,7 +90,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "catspeak-ir-compiler"
+name = "catspeak-compiler"
 version = "0.1.0"
 dependencies = [
  "clap",
