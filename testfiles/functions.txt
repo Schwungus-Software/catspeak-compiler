@@ -1,0 +1,34 @@
+let simple = fun {
+    show_debug_message("hi!")
+}
+
+let args = fun(a, b) {
+    show_debug_message("the result is: {0}", a + b)
+}
+
+let no_args = fun() {
+    show_debug_message("look ma, no args!")
+}
+
+-- Global; no `let`.
+recursive = fun(x) {
+    if x > 0 {
+        recursive(x - 1)
+    } else {
+        show_debug_message("zero!")
+    }
+}
+
+let nested = fun() {
+    let another = fun() {
+        show_debug_message("hello there!")
+    }
+
+    another()
+}
+
+simple()
+args(1, 2)
+no_args()
+recursive(10)
+nested()

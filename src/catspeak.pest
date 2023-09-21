@@ -34,11 +34,12 @@ operator = { op_1 | op_2 | op_3 }
 binary_op = { expr_no_bin_op ~ operator ~ expr }
 unary_op = { ("!" | "-" | "+" | "~") ~ expr_no_bin_op }
 
-funcall = { ident ~ "(" ~ (expr ~ ",")* ~ expr? ~ ")" }
-
 paren = { "(" ~ expr ~ ")" }
 
-expr_primary = _{ if | while | block | funcall }
+function = { "fun" ~ ("(" ~ (ident ~ ",")* ~ ident? ~ ")")? ~ block }
+funcall = { ident ~ "(" ~ (expr ~ ",")* ~ expr? ~ ")" }
+
+expr_primary = _{ if | while | block | function | funcall }
 expr_secondary = _{ paren | value }
 
 expr_no_bin_op = { expr_primary | unary_op | expr_secondary }

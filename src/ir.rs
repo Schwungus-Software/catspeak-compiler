@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use color_eyre::eyre::{self, eyre};
 use serde::{ser::SerializeMap, Serialize};
 
 use crate::parser::{AssignOp, AstNode, BinaryOp, UnaryOp};
@@ -19,7 +20,7 @@ impl Script {
         Self {
             functions: vec![],
             globals: HashSet::new(),
-            scope: vec![Scope::empty()],
+            scope: vec![],
         }
     }
 
@@ -31,97 +32,141 @@ impl Script {
 
     // TODO: document because the method name doesn't tell much.
     pub fn import_global(&mut self, name: &str) {
+        // TODO: raise an error when adding an existing global.
         self.globals.insert(name.to_string());
     }
 
-    pub fn produce_ir(mut self, ast: Vec<AstNode>) -> IR {
-        let main = self.analyze_root(ast);
-        self.functions.insert(0, main);
+    pub fn produce_ir(mut self, ast: Vec<AstNode>) -> eyre::Result<IR> {
+        let main_idx = self.analyze_function(vec![], ast)?;
 
         let mut ir = IR {
             functions: self.functions,
-            entry_points: vec![0],
+            entry_points: vec![main_idx],
         };
 
         ir.optimize();
 
-        ir
+        Ok(ir)
     }
 
-    fn produce_term(&mut self, node: &AstNode) -> Term {
+    fn produce_term(&mut self, node: &AstNode) -> eyre::Result<Term> {
         // TODO: consider a derive macro for automatic conversion.
 
-        let term = match node {
-            AstNode::Let { var_name, value } => TermKind::Assign {
-                target: Box::new(self.create_var(var_name)),
-                value: Box::new(self.produce_term(value)),
-                operator: AssignOp::Assign,
-            },
+        let term_kind = match node {
+            AstNode::Function { args_list, body } => {
+                // TODO: perhaps get rid of cloning by passing slices?
+                let body = body.iter().cloned().collect();
+                let idx = self.analyze_function(args_list.clone(), body)?;
+                TermKind::Function(idx)
+            }
+            AstNode::Let { var_name, value } => {
+                let target = Box::new(
+                    self.get_var(var_name)
+                        .unwrap_or_else(|| self.create_local_var(var_name)),
+                );
+
+                TermKind::Assign {
+                    target,
+                    value: Box::new(self.produce_term(value)?),
+                    operator: AssignOp::Assign,
+                }
+            }
             AstNode::Assign {
                 var_name,
                 operator,
                 new_value,
-            } => TermKind::Assign {
-                target: Box::new(self.create_var(var_name)),
-                value: Box::new(self.produce_term(new_value)),
-                operator: operator.clone(),
-            },
+            } => {
+                let target = Box::new(
+                    self.get_var(var_name)
+                        .unwrap_or_else(|| self.create_global_var(var_name)),
+                );
+
+                TermKind::Assign {
+                    target,
+                    value: Box::new(self.produce_term(new_value)?),
+                    operator: operator.clone(),
+                }
+            }
             AstNode::If {
                 condition,
                 body,
                 else_block,
             } => TermKind::If {
-                condition: Box::new(self.produce_term(condition)),
-                body: Box::new(self.produce_term(body)),
-                else_block: else_block
-                    .as_ref()
-                    .map(|x| self.produce_term(x))
-                    .map(Box::new),
+                condition: Box::new(self.produce_term(condition)?),
+                body: Box::new(self.produce_term(body)?),
+                else_block: match else_block {
+                    None => None,
+                    Some(block) => Some(Box::new(self.produce_term(block)?)),
+                },
             },
             AstNode::While { condition, body } => TermKind::While {
-                condition: Box::new(self.produce_term(condition)),
-                body: Box::new(self.produce_term(body)),
+                condition: Box::new(self.produce_term(condition)?),
+                body: Box::new(self.produce_term(body)?),
             },
             AstNode::Block(ast) => {
-                let terms = ast.iter().map(|x| self.produce_term(x)).collect();
+                let mut terms = vec![];
+
+                for node in ast {
+                    terms.push(self.produce_term(node)?);
+                }
+
                 TermKind::Block(terms)
             }
             AstNode::Break(value) => {
-                let value = Box::new(self.produce_term(value));
+                let value = Box::new(self.produce_term(value)?);
                 TermKind::Break(value)
             }
             AstNode::Funcall { fun_name, args } => {
-                let args = args.iter().map(|x| self.produce_term(x)).collect();
+                let mut terms = vec![];
+
+                for node in args {
+                    terms.push(self.produce_term(node)?);
+                }
+
+                let callee = Box::new(self.get_var(fun_name).ok_or_else(|| {
+                    eyre!("Cannot find function {} in the current scope", fun_name)
+                })?);
 
                 TermKind::Funcall {
-                    callee: Box::new(self.create_var(fun_name)),
-                    args,
+                    callee,
+                    args: terms,
                 }
             }
             AstNode::BinaryOp { lhs, rhs, operator } => TermKind::BinaryOp {
-                lhs: Box::new(self.produce_term(lhs)),
-                rhs: Box::new(self.produce_term(rhs)),
+                lhs: Box::new(self.produce_term(lhs)?),
+                rhs: Box::new(self.produce_term(rhs)?),
                 operator: operator.clone(),
             },
             AstNode::UnaryOp { operand, operator } => TermKind::UnaryOp {
-                operand: Box::new(self.produce_term(operand)),
+                operand: Box::new(self.produce_term(operand)?),
                 operator: operator.clone(),
             },
             AstNode::Undefined => TermKind::Value(Value::Undefined),
             AstNode::Bool(value) => TermKind::Value(Value::Bool(*value)),
             AstNode::Real(value) => TermKind::Value(Value::Real(*value)),
             AstNode::String(value) => TermKind::Value(Value::String(value.to_string())),
-            AstNode::Ident(name) => return self.create_var(name),
+            AstNode::Ident(name) => {
+                return Ok(self
+                    .get_var(name)
+                    .ok_or_else(|| eyre!("Cannot find variable {} in the current scope", name))?)
+            }
         };
 
-        term.into()
+        Ok(Term::from(term_kind))
     }
 
-    fn analyze_root(&mut self, ast: Vec<AstNode>) -> Function {
+    fn analyze_function(
+        &mut self,
+        args_list: Vec<String>,
+        body: Vec<AstNode>,
+    ) -> eyre::Result<usize> {
+        let scope = Scope::new(args_list)?;
+        self.scope.push(scope);
+
         let mut terms = vec![];
 
-        for node in ast {
-            let term = self.produce_term(&node);
+        for node in body {
+            let term = self.produce_term(&node)?;
             terms.push(term);
         }
 
@@ -133,40 +178,75 @@ impl Script {
 
         let top = self.scope.last().unwrap();
 
-        Function {
+        let fun = Function {
             local_count: top.locals.len(),
-            arg_count: 0,
+            arg_count: top.args.len(),
             root,
-        }
+        };
+
+        self.functions.push(fun);
+
+        self.scope.pop();
+
+        Ok(self.functions.len() - 1)
     }
 
-    fn create_var(&mut self, name: &str) -> Term {
+    fn get_var(&mut self, name: &str) -> Option<Term> {
         if self.globals.contains(name) {
-            return TermKind::Global(name.to_string()).into();
-        }
-
-        for frame in self.scope.iter().rev() {
-            if frame.locals.contains_key(name) {
-                let idx = frame.locals[name];
-                return TermKind::Local(idx).into();
-            }
+            return Some(TermKind::Global(name.to_string()).into());
         }
 
         let top = self.scope.last_mut().unwrap();
-        top.locals.insert(name.to_string(), top.locals.len());
-        TermKind::Local(top.locals.len() - 1).into()
+
+        let idx = if top.locals.contains_key(name) {
+            top.locals[name]
+        } else if top.args.contains_key(name) {
+            top.args[name]
+        } else {
+            return None;
+        };
+
+        Some(TermKind::Local(idx).into())
+    }
+
+    fn create_local_var(&mut self, name: &str) -> Term {
+        let top = self.scope.last_mut().unwrap();
+
+        let idx = top.args.len() + top.locals.len();
+        top.locals.insert(name.to_string(), idx);
+
+        TermKind::Local(idx).into()
+    }
+
+    fn create_global_var(&mut self, name: &str) -> Term {
+        self.globals.insert(name.to_string());
+        TermKind::Global(name.to_string()).into()
     }
 }
 
 pub struct Scope {
+    args: HashMap<String, usize>,
     locals: HashMap<String, usize>,
 }
 
 impl Scope {
-    pub fn empty() -> Self {
-        Self {
-            locals: HashMap::new(),
+    pub fn new(args: Vec<String>) -> eyre::Result<Self> {
+        let mut function_args = HashMap::new();
+
+        for name in args {
+            if function_args.contains_key(&name) {
+                return Err(eyre!("Duplicate function arguments"));
+            } else {
+                function_args.insert(name, function_args.len());
+            }
         }
+
+        let scope = Self {
+            args: function_args,
+            locals: HashMap::new(),
+        };
+
+        Ok(scope)
     }
 }
 
@@ -205,6 +285,7 @@ impl From<TermKind> for Term {
 pub enum TermKind {
     Local(usize),
     Global(String),
+    Function(usize),
     Assign {
         target: Box<Term>,
         value: Box<Term>,
@@ -263,6 +344,10 @@ impl Serialize for TermKind {
         let mut map = serializer.serialize_map(None)?;
 
         let type_idx = match self {
+            Self::Function(idx) => {
+                map.serialize_entry("idx", idx)?;
+                21
+            }
             Self::Funcall { callee, args } => {
                 map.serialize_entry("callee", callee)?;
                 map.serialize_entry("args", args)?;
@@ -348,9 +433,22 @@ impl IR {
 
 impl Term {
     fn optimize(mut self) -> Term {
+        // TODO: do something about the clones all over the place.
+        // TODO: perhaps use a proc-macro for the cases of plain tree traversal?
         match &mut self.kind {
+            TermKind::Assign {
+                target,
+                value,
+                operator,
+            } => {
+                return TermKind::Assign {
+                    target: Box::new(target.clone().optimize()),
+                    value: Box::new(value.clone().optimize()),
+                    operator: operator.clone(),
+                }
+                .into()
+            }
             TermKind::Block(terms) => {
-                // HACK: workaround for an empty block crashing the IR loader by indexing -1 from `terms`.
                 if terms.is_empty() {
                     return TermKind::Value(Value::Undefined).into();
                 }
@@ -376,7 +474,7 @@ impl Term {
             _ => (),
         };
 
-        return self;
+        self
     }
 
     fn optimize_block(terms: &mut [Term]) {

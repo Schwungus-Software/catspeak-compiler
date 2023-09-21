@@ -9,7 +9,7 @@ use crate::eyre;
 #[grammar = "catspeak.pest"]
 pub struct CatspeakParser;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub enum AstNode {
     Let {
         var_name: String,
@@ -31,6 +31,10 @@ pub enum AstNode {
     },
     Break(Box<AstNode>),
     Block(Vec<AstNode>),
+    Function {
+        args_list: Vec<String>,
+        body: Vec<AstNode>,
+    },
     Funcall {
         fun_name: String,
         args: Vec<AstNode>,
@@ -210,6 +214,7 @@ impl AstNode {
             Rule::r#if => Self::parse_if(pair),
             Rule::r#while => Self::parse_while(pair),
             Rule::block => Self::parse_block(pair),
+            Rule::function => Self::parse_function(pair),
             Rule::funcall => Self::parse_funcall(pair),
             Rule::unary_op => Self::parse_unary_op(pair),
             Rule::binary_op => Self::parse_binary_op(pair),
@@ -259,6 +264,31 @@ impl AstNode {
         }
 
         AstNode::Block(block)
+    }
+
+    pub fn parse_function(pair: Pair<Rule>) -> AstNode {
+        let mut pair = pair.into_inner();
+
+        let mut args_list = vec![];
+
+        let body = loop {
+            let pair = pair.next().unwrap();
+
+            match pair.as_rule() {
+                Rule::block => {
+                    // TODO: move into a method inside `AstNode`.
+                    let AstNode::Block(terms) = Self::parse_block(pair) else {
+                        unreachable!();
+                    };
+
+                    break terms;
+                }
+                Rule::ident => args_list.push(pair.as_str().to_owned()),
+                _ => unreachable!(),
+            }
+        };
+
+        AstNode::Function { args_list, body }
     }
 
     pub fn parse_funcall(pair: Pair<Rule>) -> AstNode {
@@ -370,7 +400,7 @@ impl AstNode {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Cursor};
+    use std::fs::File;
 
     use super::*;
 
@@ -379,47 +409,5 @@ mod tests {
         let file = File::open("testfiles/insanity.txt")?;
         CatspeakParser::parse_input(&file)?;
         Ok(())
-    }
-
-    #[test]
-    fn parse_big_script() {
-        // TODO: write down an AST for this thing.
-        CatspeakParser::parse_input(Cursor::new(
-            r#"
--- comment 1
----comment 2
---       comment 3
-
-let something = 10;
-
-let something_else = 20--hello
-
-while something < something_else {
-    something += 1
-}
-
-if something == something_else {
-    show_message("YEAH")
-} else {
-    show_message("NOOOOO")
-}
-
-if true {
-    show_message("seen")
-}
-
-if false {
-    show_message("unseen")
-}
-
-if false {
-} else if true {
-    show_message("YEAH")
-} else {
-    show_message("wuh?")
-}
-"#,
-        ))
-        .unwrap();
     }
 }

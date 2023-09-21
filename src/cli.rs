@@ -72,7 +72,7 @@ impl Cli {
         let ast_output = File::create(ast_output)?;
         serde_json::to_writer_pretty(ast_output, &ast)?;
 
-        let ir = Script::new(BasicInterface).produce_ir(ast);
+        let ir = Script::new(BasicInterface).produce_ir(ast)?;
 
         let ir_output = path.with_extension("ir.json");
         let ir_output = File::create(ir_output)?;
@@ -86,6 +86,6 @@ struct BasicInterface;
 
 impl InterfacePreset for BasicInterface {
     fn modify(&self, script: &mut Script) {
-        script.import_global("show_message");
+        script.import_global("show_debug_message");
     }
 }

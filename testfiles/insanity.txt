@@ -11,22 +11,22 @@ while something < something_else {
 }
 
 if something == something_else {
-    show_message("yep")
+    show_debug_message("yep")
 } else {
-    show_message("NOOOOO")
+    show_debug_message("NOOOOO")
 }
 
 if true {
-    show_message("seen")
+    show_debug_message("seen")
 }
 
 if false {
-    show_message("unseen")
+    show_debug_message("unseen")
 }
 
 if false {
 } else if true {
-    show_message("hi there")
+    show_debug_message("hi there")
 } else {
-    show_message("wuh?")
+    show_debug_message("wuh?")
 }
